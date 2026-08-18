@@ -1,99 +1,243 @@
-import os,json,re
+import os
+import json
+import re
 from pathlib import Path
 from datetime import date
+
+import numpy as np
 import streamlit as st
 import chromadb
-from openai import OpenAI
+from sklearn.feature_extraction.text import HashingVectorizer
+from google import genai
+from google.genai import types
 
-BASE=Path(__file__).parent
-DATA=BASE/"schedule.json"
-DB=BASE/"chroma_db"
-if not os.getenv("OPENAI_API_KEY"):
-    st.error("Set OPENAI_API_KEY in the deployment environment."); st.stop()
-ai=OpenAI()
-db=chromadb.PersistentClient(path=str(DB))
-col=db.get_or_create_collection("schedule")
+BASE = Path(__file__).parent
+SCHEDULE_FILE = BASE / "schedule.json"
+CHROMA_DIR = BASE / "chroma_db"
 
-def events(): return json.loads(DATA.read_text())
-def text(e): return f"{e['title']} | {e['date']} | {e['start_time']}-{e['end_time']} | {e['type']} | {e.get('description','')}"
-def emb(xs): return [x.embedding for x in ai.embeddings.create(model="text-embedding-3-small",input=xs).data]
-def rebuild():
-    es=events()
-    if es: col.upsert(ids=[e["id"] for e in es],documents=[text(e) for e in es],embeddings=emb([text(e) for e in es]),metadatas=[{"date":e["date"],"title":e["title"],"type":e["type"]} for e in es])
-if col.count()!=len(events()): rebuild()
+st.set_page_config(page_title="Agentic RAG Schedule Assistant", page_icon="📅", layout="wide")
 
-def get_schedule(date_from=None,date_to=None,time_from=None,time_to=None,query=None,top_k=8):
-    es=events(); out=[]
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    st.error("GEMINI_API_KEY is not configured in Render Environment Variables.")
+    st.stop()
+
+client = genai.Client(api_key=GEMINI_API_KEY)
+MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+# Local vectorization: no OpenAI embedding API is needed.
+vectorizer = HashingVectorizer(
+    n_features=512,
+    alternate_sign=False,
+    norm="l2",
+    lowercase=True,
+    token_pattern=r"(?u)\b\w+\b",
+)
+
+chroma = chromadb.PersistentClient(path=str(CHROMA_DIR))
+collection = chroma.get_or_create_collection(name="schedule")
+
+def load_events():
+    return json.loads(SCHEDULE_FILE.read_text(encoding="utf-8"))
+
+def save_events(events):
+    SCHEDULE_FILE.write_text(json.dumps(events, indent=2), encoding="utf-8")
+
+def event_text(e):
+    return (
+        f"{e['title']} | {e['date']} | {e['start_time']}-{e['end_time']} | "
+        f"{e['type']} | {e.get('description', '')}"
+    )
+
+def vectorize(texts):
+    return vectorizer.transform(texts).toarray().astype(np.float32).tolist()
+
+def rebuild_index():
+    global collection
+    try:
+        chroma.delete_collection("schedule")
+    except Exception:
+        pass
+    collection = chroma.get_or_create_collection(name="schedule")
+    es = load_events()
+    if not es:
+        return
+    docs = [event_text(e) for e in es]
+    collection.upsert(
+        ids=[e["id"] for e in es],
+        documents=docs,
+        embeddings=vectorize(docs),
+        metadatas=[
+            {"event_id": e["id"], "date": e["date"], "title": e["title"], "type": e["type"]}
+            for e in es
+        ],
+    )
+
+def ensure_index():
+    if collection.count() != len(load_events()):
+        rebuild_index()
+
+ensure_index()
+
+def get_schedule(
+    date_from: str = "",
+    date_to: str = "",
+    time_from: str = "",
+    time_to: str = "",
+    query: str = "",
+    top_k: int = 8,
+):
+    """Retrieve schedule events using date/time filters and ChromaDB vector search.
+    Dates are YYYY-MM-DD and times are HH:MM. Use this for schedule questions,
+    availability, conflicts, or to identify an existing event before changing it.
+    """
+    es = load_events()
+    filtered = []
     for e in es:
-        if date_from and e["date"]<date_from: continue
-        if date_to and e["date"]>date_to: continue
-        if time_from and e["end_time"]<=time_from: continue
-        if time_to and e["start_time"]>=time_to: continue
-        out.append(e)
+        if date_from and e["date"] < date_from:
+            continue
+        if date_to and e["date"] > date_to:
+            continue
+        if time_from and e["end_time"] <= time_from:
+            continue
+        if time_to and e["start_time"] >= time_to:
+            continue
+        filtered.append(e)
+
     if query:
-        r=col.query(query_embeddings=emb([query])[0:1],n_results=min(top_k,max(1,col.count())))
-        ids=set(r["ids"][0]) if r.get("ids") else set()
-        return [e for e in (out or es) if e["id"] in ids][:top_k]
-    return out[:top_k]
+        search_space = filtered if filtered else es
+        if not search_space:
+            return {"events": [], "count": 0}
+        query_vec = vectorize([query])[0]
+        result = collection.query(
+            query_embeddings=[query_vec],
+            n_results=min(max(int(top_k or 8), 1), len(search_space)),
+        )
+        ids = result.get("ids", [[]])[0]
+        by_id = {e["id"]: e for e in search_space}
+        ranked = [by_id[i] for i in ids if i in by_id]
+        return {"events": ranked, "count": len(ranked)}
 
-def update_schedule(action,event_id=None,title=None,event_date=None,start_time=None,end_time=None,event_type=None,description=None):
-    es=events()
-    if action=="add":
-        if not all([title,event_date,start_time,end_time]): return {"success":False,"error":"title, event_date, start_time and end_time are required"}
-        nums=[int(re.sub(r"\D","",e["id"]) or 0) for e in es]
-        e={"id":event_id or f"evt-{max(nums+[0])+1:03d}","title":title,"date":event_date,"start_time":start_time,"end_time":end_time,"type":event_type or "meeting","description":description or ""}
-        es.append(e)
-        DATA.write_text(json.dumps(es,indent=2)); rebuild(); return {"success":True,"event":e}
-    target=next((e for e in es if e["id"]==event_id),None)
-    if not target: return {"success":False,"error":"Event not found"}
-    if action=="remove": es.remove(target)
-    elif action=="update":
-        for k,v in {"title":title,"date":event_date,"start_time":start_time,"end_time":end_time,"type":event_type,"description":description}.items():
-            if v is not None: target[k]=v
-    else: return {"success":False,"error":"action must be add, update or remove"}
-    DATA.write_text(json.dumps(es,indent=2)); rebuild()
-    return {"success":True,"event":target} if action=="update" else {"success":True,"removed":target}
+    return {"events": filtered[:max(int(top_k or 8), 1)], "count": len(filtered)}
 
-TOOLS=[{"type":"function","function":{"name":"get_schedule","description":"Retrieve schedule using date/time filters and semantic RAG. Use for schedule questions, availability, and before changing an indirectly referenced event.","parameters":{"type":"object","properties":{"date_from":{"type":"string"},"date_to":{"type":"string"},"time_from":{"type":"string"},"time_to":{"type":"string"},"query":{"type":"string"},"top_k":{"type":"integer"}}}}},
-{"type":"function","function":{"name":"update_schedule","description":"Add, update, or remove a schedule entry. For existing events, use get_schedule first unless event_id is already known.","parameters":{"type":"object","properties":{"action":{"type":"string","enum":["add","update","remove"]},"event_id":{"type":"string"},"title":{"type":"string"},"event_date":{"type":"string"},"start_time":{"type":"string"},"end_time":{"type":"string"},"event_type":{"type":"string","enum":["meeting","workshop","task","appointment"]},"description":{"type":"string"}},"required":["action"]}}}]
+def update_schedule(
+    action: str,
+    event_id: str = "",
+    title: str = "",
+    event_date: str = "",
+    start_time: str = "",
+    end_time: str = "",
+    event_type: str = "meeting",
+    description: str = "",
+):
+    """Add, update, or remove a schedule entry.
+    For update/remove, event_id must identify an existing event.
+    """
+    es = load_events()
 
-def agent(q):
-    sys=f"""You are an Agentic RAG Schedule Assistant. Today is {date.today().isoformat()}.
-Use only the schedule in the tools. Resolve relative dates such as tomorrow and Friday.
-For schedule questions, availability, conflicts, or indirect references, call get_schedule.
-For an existing event change/removal, retrieve first unless exact event_id is known.
-For adding, call update_schedule. Never claim a mutation succeeded unless success=true.
-For availability, inspect overlapping events and clearly say free/busy."""
-    msgs=[{"role":"system","content":sys},{"role":"user","content":q}]
-    trace=[]
-    for _ in range(6):
-        r=ai.chat.completions.create(model=os.getenv("OPENAI_MODEL","gpt-4.1-mini"),messages=msgs,tools=TOOLS,tool_choice="auto",temperature=0)
-        m=r.choices[0].message
-        if not m.tool_calls: return m.content,trace
-        msgs.append(m)
-        for c in m.tool_calls:
-            a=json.loads(c.function.arguments or "{}"); trace.append({"tool":c.function.name,"arguments":a})
-            result=get_schedule(**a) if c.function.name=="get_schedule" else update_schedule(**a)
-            msgs.append({"role":"tool","tool_call_id":c.id,"content":json.dumps(result)})
-    return "Unable to complete the request.",trace
+    if action == "add":
+        if not all([title, event_date, start_time, end_time]):
+            return {"success": False, "error": "title, event_date, start_time and end_time are required"}
+        nums = [int(re.sub(r"\D", "", e["id"]) or 0) for e in es]
+        new_event = {
+            "id": event_id or f"evt-{max(nums + [0]) + 1:03d}",
+            "title": title,
+            "date": event_date,
+            "start_time": start_time,
+            "end_time": end_time,
+            "type": event_type or "meeting",
+            "description": description or "",
+        }
+        es.append(new_event)
+        save_events(es)
+        rebuild_index()
+        return {"success": True, "event": new_event}
 
-st.set_page_config(page_title="Agentic RAG Schedule Assistant",page_icon="📅",layout="wide")
+    target = next((e for e in es if e["id"] == event_id), None)
+    if not target:
+        return {"success": False, "error": f"Event {event_id} not found"}
+
+    if action == "remove":
+        es.remove(target)
+        save_events(es)
+        rebuild_index()
+        return {"success": True, "removed": target}
+
+    if action == "update":
+        for key, value in {
+            "title": title, "date": event_date, "start_time": start_time,
+            "end_time": end_time, "type": event_type, "description": description
+        }.items():
+            if value:
+                target[key] = value
+        save_events(es)
+        rebuild_index()
+        return {"success": True, "event": target}
+
+    return {"success": False, "error": "action must be add, update, or remove"}
+
+SYSTEM_PROMPT = f"""
+You are an Agentic RAG Schedule Assistant.
+Today's date is {date.today().isoformat()}.
+Use exactly two tools: get_schedule and update_schedule.
+For schedule questions, availability, conflicts, or existing-event references, use get_schedule.
+For an existing event update/removal without an event_id, first use get_schedule to identify it, then use update_schedule.
+For a new event, use update_schedule when the date and time are clear.
+Resolve relative dates such as tomorrow, Friday, and next Monday.
+For availability, inspect the returned events and determine whether the requested time overlaps them.
+Never claim a mutation succeeded unless update_schedule returned success=true.
+Keep answers concise and clear.
+"""
+
+def run_agent(user_text):
+    config = types.GenerateContentConfig(
+        system_instruction=SYSTEM_PROMPT,
+        tools=[get_schedule, update_schedule],
+        temperature=0.1,
+    )
+    response = client.models.generate_content(
+        model=MODEL,
+        contents=user_text,
+        config=config,
+    )
+    return response.text
+
 st.title("📅 Agentic RAG Schedule Assistant")
-st.caption("30-day schedule • ChromaDB • RAG • two agent tools")
-st.sidebar.metric("Events",len(events()))
-if st.sidebar.button("Rebuild Chroma index"): rebuild(); st.sidebar.success("Rebuilt")
-st.sidebar.write("Examples")
-for x in ["What do I have scheduled tomorrow?","Am I free Friday afternoon?","Add a meeting on August 15 at 3 PM.","Move my meeting from 2 PM to 4 PM."]: st.sidebar.code(x)
-if "chat" not in st.session_state: st.session_state.chat=[]
-for m in st.session_state.chat:
-    with st.chat_message(m["role"]): st.markdown(m["content"])
-q=st.chat_input("Ask about your schedule or change it...")
-if q:
-    st.session_state.chat.append({"role":"user","content":q})
-    with st.chat_message("user"): st.markdown(q)
+st.caption("Gemini Agent • ChromaDB RAG • Local vectors • get_schedule + update_schedule")
+
+with st.sidebar:
+    st.subheader("Project")
+    st.metric("Stored events", len(load_events()))
+    if st.button("Rebuild Chroma index"):
+        rebuild_index()
+        st.success("ChromaDB index rebuilt.")
+    st.divider()
+    st.write("Try:")
+    st.code("What do I have scheduled tomorrow?")
+    st.code("Am I free Friday afternoon?")
+    st.code("Add a meeting on August 25 at 3 PM.")
+    st.code("Move my meeting from 3 PM to 4 PM.")
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+for m in st.session_state.messages:
+    with st.chat_message(m["role"]):
+        st.markdown(m["content"])
+
+prompt = st.chat_input("Ask about your schedule or change it...")
+if prompt:
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
     with st.chat_message("assistant"):
-        with st.spinner("Retrieving and deciding..."): ans,trace=agent(q)
-        st.markdown(ans)
-        with st.expander("Agent tool trace"):
-            for t in trace: st.json(t)
-    st.session_state.chat.append({"role":"assistant","content":ans})
+        with st.spinner("Agent is retrieving and deciding..."):
+            try:
+                answer = run_agent(prompt)
+            except Exception as exc:
+                answer = (
+                    "I couldn't process that request. Check GEMINI_API_KEY and Render logs.\n\n"
+                    f"Error: `{type(exc).__name__}: {exc}`"
+                )
+        st.markdown(answer)
+    st.session_state.messages.append({"role": "assistant", "content": answer})
