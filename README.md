@@ -1,15 +1,13 @@
-# Agentic RAG Schedule Assistant
+# Agentic RAG Schedule Assistant - Gemini version
 
-Streamlit + OpenAI tool calling + ChromaDB.
+This version removes the OpenAI API completely.
 
-Run:
-`pip install -r requirements.txt`
-`streamlit run app.py`
+Environment variables on Render:
+- GEMINI_API_KEY = your Google AI Studio key
+- GEMINI_MODEL = gemini-2.5-flash
 
-Set `OPENAI_API_KEY`.
+Build command:
+pip install -r requirements.txt
 
-Deploy on Render as a Python Web Service:
-Build: `pip install -r requirements.txt`
-Start: `streamlit run app.py --server.address 0.0.0.0 --server.port $PORT`
-
-The app contains the two required tools: `get_schedule` and `update_schedule`.
+Start command:
+streamlit run app.py --server.address 0.0.0.0 --server.port $PORT
