@@ -1,0 +1,182 @@
+[
+  {
+    "id": "evt-001",
+    "title": "Team Standup",
+    "date": "2026-08-18",
+    "start_time": "09:30",
+    "end_time": "10:00",
+    "type": "meeting",
+    "description": "Daily engineering team standup."
+  },
+  {
+    "id": "evt-002",
+    "title": "DBMS Assignment",
+    "date": "2026-08-19",
+    "start_time": "14:00",
+    "end_time": "16:00",
+    "type": "task",
+    "description": "Complete normalization and indexing exercises."
+  },
+  {
+    "id": "evt-003",
+    "title": "AI Agents Workshop",
+    "date": "2026-08-20",
+    "start_time": "10:00",
+    "end_time": "13:00",
+    "type": "workshop",
+    "description": "Hands-on workshop on agentic AI and RAG."
+  },
+  {
+    "id": "evt-004",
+    "title": "Project Guide Meeting",
+    "date": "2026-08-21",
+    "start_time": "15:00",
+    "end_time": "16:00",
+    "type": "meeting",
+    "description": "Discuss project progress."
+  },
+  {
+    "id": "evt-005",
+    "title": "Doctor Appointment",
+    "date": "2026-08-22",
+    "start_time": "11:00",
+    "end_time": "11:45",
+    "type": "appointment",
+    "description": "Routine appointment."
+  },
+  {
+    "id": "evt-006",
+    "title": "Java Lab",
+    "date": "2026-08-24",
+    "start_time": "09:00",
+    "end_time": "11:00",
+    "type": "workshop",
+    "description": "Java programming lab."
+  },
+  {
+    "id": "evt-007",
+    "title": "Project Development",
+    "date": "2026-08-25",
+    "start_time": "14:00",
+    "end_time": "17:00",
+    "type": "task",
+    "description": "Implement agent tools and RAG retrieval."
+  },
+  {
+    "id": "evt-008",
+    "title": "Placement Preparation",
+    "date": "2026-08-26",
+    "start_time": "18:00",
+    "end_time": "19:30",
+    "type": "task",
+    "description": "Practice aptitude and coding."
+  },
+  {
+    "id": "evt-009",
+    "title": "Team Review",
+    "date": "2026-08-27",
+    "start_time": "16:00",
+    "end_time": "17:00",
+    "type": "meeting",
+    "description": "Review sprint progress."
+  },
+  {
+    "id": "evt-010",
+    "title": "DBMS Viva",
+    "date": "2026-08-28",
+    "start_time": "10:30",
+    "end_time": "11:30",
+    "type": "appointment",
+    "description": "DBMS viva."
+  },
+  {
+    "id": "evt-011",
+    "title": "College Workshop",
+    "date": "2026-08-29",
+    "start_time": "10:00",
+    "end_time": "12:00",
+    "type": "workshop",
+    "description": "Cloud and deployment workshop."
+  },
+  {
+    "id": "evt-012",
+    "title": "Project Documentation",
+    "date": "2026-08-31",
+    "start_time": "13:00",
+    "end_time": "15:00",
+    "type": "task",
+    "description": "Write architecture and testing documentation."
+  },
+  {
+    "id": "evt-013",
+    "title": "Faculty Meeting",
+    "date": "2026-09-01",
+    "start_time": "11:00",
+    "end_time": "12:00",
+    "type": "meeting",
+    "description": "Project status discussion."
+  },
+  {
+    "id": "evt-014",
+    "title": "Coding Practice",
+    "date": "2026-09-02",
+    "start_time": "17:00",
+    "end_time": "18:30",
+    "type": "task",
+    "description": "Practice algorithms."
+  },
+  {
+    "id": "evt-015",
+    "title": "R Programming Lab",
+    "date": "2026-09-03",
+    "start_time": "09:30",
+    "end_time": "11:30",
+    "type": "workshop",
+    "description": "Data analysis lab."
+  },
+  {
+    "id": "evt-016",
+    "title": "Project Demo",
+    "date": "2026-09-04",
+    "start_time": "14:00",
+    "end_time": "15:30",
+    "type": "meeting",
+    "description": "Internal demo."
+  },
+  {
+    "id": "evt-017",
+    "title": "Library Study",
+    "date": "2026-09-05",
+    "start_time": "10:00",
+    "end_time": "12:00",
+    "type": "task",
+    "description": "Study OS and computer architecture."
+  },
+  {
+    "id": "evt-018",
+    "title": "Mock Interview",
+    "date": "2026-09-07",
+    "start_time": "15:00",
+    "end_time": "16:00",
+    "type": "appointment",
+    "description": "Technical mock interview."
+  },
+  {
+    "id": "evt-019",
+    "title": "Sprint Planning",
+    "date": "2026-09-08",
+    "start_time": "09:30",
+    "end_time": "10:30",
+    "type": "meeting",
+    "description": "Plan next sprint."
+  },
+  {
+    "id": "evt-020",
+    "title": "Final Testing",
+    "date": "2026-09-09",
+    "start_time": "14:00",
+    "end_time": "17:00",
+    "type": "task",
+    "description": "Run end-to-end tests."
+  }
+]
